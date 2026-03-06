@@ -1,3 +1,6 @@
+/**
+ * 飞书AI助手 - Cloudflare Workers版本
+ */
 const APP_ID = 'cli_a923fe15f53c9bc7';
 const APP_SECRET = 'h3sepXWkyTYjYZgklxDaVhLo5ezR5YGx';
 
