@@ -14,22 +14,18 @@ async function getTenantToken() {
     return cachedToken;
   }
   
-  try {
-    const response = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ app_id: APP_ID, app_secret: APP_SECRET })
-    });
-    
-    const data = await response.json();
-    
-    if (data.code === 0) {
-      cachedToken = data.tenant_access_token;
-      tokenExpire = now + (data.expire || 7200) * 1000;
-      return cachedToken;
-    }
-  } catch (e) {
-    console.log('获取Token失败:', e.message);
+  const response = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ app_id: APP_ID, app_secret: APP_SECRET })
+  });
+  
+  const data = await response.json();
+  
+  if (data.code === 0) {
+    cachedToken = data.tenant_access_token;
+    tokenExpire = now + (data.expire || 7200) * 1000;
+    return cachedToken;
   }
   return null;
 }
@@ -70,38 +66,26 @@ function processAI(message) {
 // 主请求处理
 async function handleRequest(request) {
   if (request.method === 'POST') {
-    try {
-      const data = await request.json();
+    const data = await request.json();
+    
+    // URL验证
+    if (data.type === 'url_verification') {
+      return new Response(JSON.stringify({ challenge: data.challenge }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    // 处理消息
+    const event = data.event || {};
+    if (event.type === 'message') {
+      const message = event.message || {};
+      const messageId = message.message_id;
+      const content = JSON.parse(message.content || '{}');
+      const text = content.text || '';
       
-      // URL验证
-      if (data.type === 'url_verification') {
-        return new Response(JSON.stringify({ challenge: data.challenge }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      
-      // 处理消息
-      const event = data.event || {};
-      if (event.type === 'message') {
-        const message = event.message || {};
-        const messageId = message.message_id;
-        
-        try {
-          const content = JSON.parse(message.content || '{}');
-          const text = content.text || '';
-          
-          console.log('收到消息:', text);
-          await replyMessage(messageId, '🔄 收到任务，正在处理...');
-          const response = processAI(text);
-          await replyMessage(messageId, response);
-          
-        } catch (e) {
-          console.log('处理错误:', e.message);
-        }
-      }
-      
-    } catch (e) {
-      console.log('解析错误:', e.message);
+      await replyMessage(messageId, '🔄 收到任务，正在处理...');
+      const response = processAI(text);
+      await replyMessage(messageId, response);
     }
   }
   
@@ -110,31 +94,21 @@ async function handleRequest(request) {
   });
 }
 
-// 健康检查
-async function handleHealthCheck() {
-  return new Response(JSON.stringify({ 
-    status: 'ok', 
-    service: '飞书AI助手'
-  }), {
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-
-// Cloudflare Workers入口
+// 入口
 export default {
   async fetch(request) {
     const url = new URL(request.url);
     
     if (url.pathname === '/' || url.pathname === '') {
-      return handleHealthCheck
-      await replyMessage(messageId, '🔄 收到任务，正在处理...');
-      await replyMessage(messageId, processAI(text));
-    } catch (e) { console.log(e.message); }
+      return new Response(JSON.stringify({ status: 'ok', service: '飞书AI助手' }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    if (url.pathname === '/webhook') {
+      return handleRequest(request);
+    }
+    
+    return new Response('Not Found', { status: 404 });
   }
-  res.json({ code: 0, msg: 'success' });
-});
-
-app.get('/', (req, res) => res.json({ status: 'ok', service: '飞书AI助手' }));
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => { console.log(`运行中 ${PORT}`); getTenantToken(); });
+};
